@@ -1,0 +1,36 @@
+{
+  "name": "code-challenge-remote",
+  "version": "0.0.1",
+  "description": "Code challenges with a server component for running tests in the cloud",
+  "main": "index.js",
+  "bin": {
+    "challenge": "./client"
+  },
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gi60s/code-challenge-remote.git"
+  },
+  "keywords": [
+    "code-challenge",
+    "grading",
+    "testing"
+  ],
+  "author": "James Speirs <james.speirs@gmail.com>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/Gi60s/code-challenge-remote/issues"
+  },
+  "homepage": "https://github.com/Gi60s/code-challenge-remote#readme",
+  "devDependencies": {
+    "express": "^4.16.4",
+    "express-session": "^1.15.6",
+    "jest": "^23.6.0",
+    "standard": "^12.0.1"
+  },
+  "dependencies": {
+    "debug": "^4.1.0"
+  }
+}

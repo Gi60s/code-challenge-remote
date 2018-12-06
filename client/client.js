@@ -53,7 +53,8 @@ CodeChallengeClient.prototype.initChallenge = function (name, outputDirectory) {
 /**
  * Direct the user to open a browser to a specific URL, get a code, and paste it here
  */
-CodeChallengeClient.prototype.login = function () {
+CodeChallengeClient.prototype.login = function (remoteUrl) {
+  this.url = remoteUrl
   const url = this.url + 'login'
 }
 
