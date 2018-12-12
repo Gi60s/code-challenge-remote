@@ -7,16 +7,11 @@ const path = require('path')
 const app = express()
 const cookieName = 'my-cookie'
 
-app.use(session({
-  name: cookieName,
-  secret: 'secret',
-  resave: false,
-  saveUninitialized: false
-}))
-
 const challenge = new Challenge({
-  challengePath: 'http://localhost:3000/challenge',
-  getUserName: req => {
+  challengePath: path.resolve(__dirname, 'challenges'),
+  challengeUrl: 'http://localhost:3000/challenge',
+  getUserId: req => {
+    if (!req.session || !req.session.user) return null
     return {
       id: req.session.user,
       username: req.session.user
@@ -25,14 +20,23 @@ const challenge = new Challenge({
   sessionCookieName: cookieName,
   store: Challenge.fileStore(path.resolve(__dirname, 'store'))
 })
-app.use('/challenge', challenge.middleware)
+
+app.use(session({
+  name: cookieName,
+  secret: 'secret',
+  resave: false,
+  saveUninitialized: false
+}))
+
+app.use('/challenge', challenge.middleware())
 
 app.get('/login', (req, res) => {
   const user = req.query.user
   if (user) {
     req.session.user = user
     req.session.save()
-    res.sendStatus(200)
+    res.status(200)
+    res.send(challenge.getLoginCommand(req))
   } else {
     res.sendStatus(403)
   }
@@ -51,7 +55,12 @@ app.get('/logout', (req, res) => {
 
 app.get('/status', (req, res) => {
   const user = req.session.user
-  res.send(user ? 'Logged in as: ' + user : 'Not logged in')
+  res.set('content-type', 'text/plain')
+  if (user) {
+    res.send('Logged in as ' + user + '\n\n' + challenge.getLoginCommand(req))
+  } else {
+    res.send('Not logged in')
+  }
 })
 
 app.listen(3000, function (err) {

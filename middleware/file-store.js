@@ -1,5 +1,5 @@
 'use strict'
-const debug = require('code-challenge:file-store')
+const debug = require('debug')('code-challenge:file-store')
 const fs = require('fs')
 const path = require('path')
 const util = require('util')
@@ -28,9 +28,13 @@ module.exports = function (directory) {
     writeFile(filePath, JSON.stringify(data))
   }
 
-  function load (userId) {
+  async function load (userId, add) {
     const filePath = getFileName(directory, userId)
-    return getContent(filePath)
+    const content = await getContent(filePath)
+    Object.keys(content).forEach(challenge => {
+      const { date, score } = content[challenge]
+      add(challenge, date, score)
+    })
   }
 
   return { save, load }
@@ -39,7 +43,7 @@ module.exports = function (directory) {
 async function ensureDirectoryExists (directory) {
   debug('creating directory')
   try {
-    mkdir(directory)
+    await mkdir(directory)
     debug('created directory')
   } catch (err) {
     if (err.code === 'EEXIST') {
@@ -54,10 +58,10 @@ async function ensureDirectoryExists (directory) {
   }
 }
 
-function getContent (filePath) {
+async function getContent (filePath) {
   let content = '{}'
   try {
-    content = readFile(filePath, 'utf8')
+    content = await readFile(filePath, 'utf8')
   } catch (err) {
     if (err.code !== 'ENOENT') throw err
   }
