@@ -13,8 +13,7 @@
       - README.md                     [FILE]
       - ... set up files              [FILES AND FOLDERS]
       - ... initial project files     [FILES AND FOLDERS]
-    - ignore.txt                      [FILE]
-    - before-test-runner.js           [FILE]
+    - test-runner-hooks.js           [FILE]
     - test-runner.sh                  [FILE]
     - test-runner-parser.js           [FILE]
 ```
@@ -29,7 +28,7 @@
 
 5. Optionally, within the code challenge directory, create an `ignore.txt` file. Each line in this file will be compared to every file in the starter (when downloading) or in the upload (when submitting) and make sure that those files are not sent between the server and client.
 
-5. Optionally, within the code challenge directory, create a `before-test-runner.js` script. This will run after the user has submitted files but before the tests are run on the server.
+5. Optionally, within the code challenge directory, create a `test-runner-hooks.js` script. This will run after the user has submitted files but before the tests are run on the server.
 
 6. Within the code challenge directory, create a `test-runner.sh` (or a `test-runner.bat` if on Windows) file that runs your tests. It should initiate a Docker container to run the tests otherwise you will seriously compromise your server. 
 
