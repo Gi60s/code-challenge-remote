@@ -1,11 +1,17 @@
 'use strict'
 const archiver = require('archiver')
-const decompress = require('decompress')
 const files = require('./files')
 const path = require('path')
+const unzip = require('unzip')
 
 exports.unzip = function (stream, destination) {
-  return decompress(stream, destination)
+  return new Promise((resolve, reject) => {
+    const result = stream
+      .pipe(unzip.Extract({ path: destination }))
+    result.on('error', reject)
+    result.on('close', resolve)
+    result.on('finish', resolve)
+  })
 }
 
 /**
