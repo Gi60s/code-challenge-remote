@@ -1,9 +1,10 @@
 'use strict'
 const fs = require('fs')
-const http = require('http')
+const files = require('../common/files')
 const path = require('path')
 const { download, request, upload } = require('./request')
 const store = require('./store')
+const streamPromise = require('../common/stream-promise')
 const tempDir = require('os').tmpdir()
 const { zip, unzip } = require('../common/zip')
 
@@ -17,7 +18,15 @@ exports.load = function () {
 exports.login = async function (url, sessionId) {
   const info = await request({ url: url + '/info' })
 
-  if (info.statusCode !== 200) {
+  if (info.statusCode === 404) {
+    store.write({})
+    console.log('Invalid login path')
+    return null
+  } else if (info.statusCode >= 400 && info.statusCode < 500) {
+    store.write({})
+    console.log('Invalid request')
+    return null
+  } else if (info.statusCode !== 200) {
     store.write({})
     console.log('Unable to communicate with challenge server')
     return null
@@ -72,28 +81,16 @@ CodeChallengeClient.prototype.getStatus = async function () {
     : null
 }
 
-CodeChallengeClient.prototype.initChallenge = function (challenge, outputDirectory) {
-  return new Promise(async (resolve, reject) => {
-    const res = await download(this, challenge)
+CodeChallengeClient.prototype.initChallenge = async function (challenge, outputDirectory) {
+  const outputDir = path.resolve(outputDirectory, challenge)
 
-    if (res.statusCode !== 200) return reject(Error(res.body))
+  const dirExists = await files.isDirectory(outputDir)
+  if (dirExists) throw Error('Could not download files because a directory already exists at the location: ' + outputDir)
 
-    const zipPath = path.resolve(tempDir, 'remote-code-challenge_' + Date.now() + '.zip')
-    const ws = fs.createWriteStream(zipPath)
+  const res = await download(this, challenge)
+  if (res.statusCode !== 200) throw Error(res.body)
 
-    // wait for zip file to finish write before decompress
-    ws.on('close', () => {
-      const out = path.resolve(outputDirectory, challenge)
-      unzip(zipPath, out)
-        .then(files => {
-          fs.unlink(zipPath, () => {})
-          console.log(`Downloaded ${files.length} files to ${out}`)
-        })
-        .then(resolve, reject)
-    })
-
-    res.pipe(ws)
-  })
+  await unzip(res, outputDir)
 }
 
 /**
@@ -121,8 +118,20 @@ CodeChallengeClient.prototype.save = function () {
  * @param directory
  */
 CodeChallengeClient.prototype.submit = async function (challenge, directory) {
-  const readable = zip(directory)
+  const archive = zip(directory)
+  const zipFilePath = path.resolve(tempDir, challenge + '_' + Date.now() + '.zip')
+
+  // pipe the zip stream to a zip file
+  const output = fs.createWriteStream(zipFilePath)
+  archive.pipe(output)
+  await streamPromise(output)
+
+  const readable = fs.createReadStream(zipFilePath)
   const res = await upload(this, challenge, readable)
+  return {
+    body: res.body,
+    statusCode: res.statusCode
+  }
 }
 
 CodeChallengeClient.prototype.validateSession = async function () {
