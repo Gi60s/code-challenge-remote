@@ -1,10 +1,13 @@
 'use strict'
-const { exec } = require('child_process')
+const { exec, spawn } = require('child_process')
+const debug = require('debug')('code-challenge')
 const files = require('../common/files')
 const fileStore = require('./file-store')
 const fs = require('fs')
 const path = require('path')
 const Meter = require('./stream-meter')
+const streamPromise = require('../common/stream-promise')
+const stripAnsi = require('strip-ansi')
 const tempDir = require('os').tmpdir()
 const { zip, unzip } = require('../common/zip')
 
@@ -22,9 +25,9 @@ function Challenge (options) {
 }
 
 Challenge.prototype.downloadChallenge = async function (req, res, challenge) {
-  const { isChallenge, hasStarter, hasStarterZip } = await this.getChallengeDetails(challenge)
+  const { isChallenge, hasStarterZip } = await this.getChallengeDetails(challenge)
   try {
-    if (!isChallenge || !hasStarter) {
+    if (!isChallenge) {
       res.sendStatus(404)
     } else {
       if (!hasStarterZip) await this.prepare(challenge)
@@ -38,29 +41,38 @@ Challenge.prototype.downloadChallenge = async function (req, res, challenge) {
 
 Challenge.prototype.getChallengeDetails = async function (challenge) {
   const fullPath = path.resolve(this.config.challengePath, challenge)
-  let data = [ false, false, false, false, false ]
-
-  // check if the path points to a directory, otherwise resolve to undefined
-  const isChallenge = await files.isDirectory(fullPath)
+  const isDirectory = await files.isDirectory(fullPath)
 
   // get challenge details
-  if (isChallenge) {
-    data = await Promise.all([
-      files.isFile(path.resolve(fullPath, 'test-runner-hooks.js')),
+  if (isDirectory) {
+    const [ hasConfig, hasHooks, hasOverwrites, hasStarter, hasStarterZip, hasDockerfile, hasDockerCompose ] = await Promise.all([
+      files.isFile(path.resolve(fullPath, 'config.json')),
+      files.isFile(path.resolve(fullPath, 'hooks.js')),
       files.isDirectory(path.resolve(fullPath, 'overwrite')),
       files.isDirectory(path.resolve(fullPath, 'starter')),
       files.isFile(path.resolve(fullPath, challenge + '.zip')),
-      files.isFile(path.resolve(fullPath, 'test-runner.' + (process.platform === 'win32' ? 'bat' : 'sh')))
+      files.isFile(path.resolve(fullPath, 'Dockerfile')),
+      files.isFile(path.resolve(fullPath, 'docker-compose.yml'))
     ])
-  }
-
-  return {
-    hasHooks: data[0],
-    hasOverwrites: data[1],
-    hasStarter: data[2],
-    hasStarterZip: data[3],
-    hasTestRunner: data[4],
-    isChallenge
+    const isChallenge = hasStarter && (hasDockerfile || hasDockerCompose)
+    return {
+      hasConfig,
+      hasHooks,
+      hasOverwrites,
+      hasStarterZip,
+      hasDockerfile,
+      hasDockerCompose,
+      isChallenge
+    }
+  } else {
+    return {
+      hasHooks: false,
+      hasOverwrites: false,
+      hasStarterZip: false,
+      hasDockerfile: false,
+      hasDockerCompose: false,
+      isChallenge: false
+    }
   }
 }
 
@@ -70,15 +82,15 @@ Challenge.prototype.getChallengeDetails = async function (challenge) {
  */
 Challenge.prototype.getChallengesList = async function () {
   const directories = await files.readDir(this.config.challengePath)
+  const results = []
 
-  const promises = []
-  directories.forEach(fileName => {
-    const fullPath = path.resolve(this.config.challengePath, fileName)
-    promises.push(files.isDirectory(fullPath))
+  const promises = directories.map(async fileName => {
+    const details = await this.getChallengeDetails(fileName)
+    if (details.isChallenge) results.push(fileName)
   })
 
-  const results = await Promise.all(promises)
-  return directories.filter((fileName, index) => results[index])
+  await Promise.all(promises)
+  return results
 }
 
 Challenge.prototype.getLoginCommand = function (req) {
@@ -149,7 +161,7 @@ Challenge.prototype.getUserId = async function (req) {
   return data
 }
 
-Challenge.prototype.middleware = function (options = {}) {
+Challenge.prototype.middleware = function () {
   return async (req, res) => {
     const method = req.method.toUpperCase()
     const user = await this.getUserId(req)
@@ -186,7 +198,7 @@ Challenge.prototype.middleware = function (options = {}) {
       // allow the user to upload a challenge for remote testing
       } else if (method === 'POST' && req.path.startsWith('/upload/')) {
         const challenge = req.path.substr(8)
-        this.submitChallenge(req, res, options, user, challenge)
+        this.submitChallenge(req, res, user, challenge)
 
       // invalid path
       } else {
@@ -201,8 +213,8 @@ Challenge.prototype.middleware = function (options = {}) {
 
 // take a challenge's starter directory and create a zip file
 Challenge.prototype.prepare = async function (challenge) {
-  const { isChallenge, hasStarter } = await this.getChallengeDetails(challenge)
-  if (!isChallenge || !hasStarter) throw Error('Unable to prepare challenge without required starter directory')
+  const { isChallenge } = await this.getChallengeDetails(challenge)
+  if (isChallenge) throw Error('Cannot prepare challenge due to missing starter directory or missing Dockerfile / docker-compose.yml')
 
   const challengeDirectory = path.resolve(this.config.challengePath, challenge)
   const starterDirectory = path.resolve(challengeDirectory, 'starter')
@@ -214,64 +226,44 @@ Challenge.prototype.prepare = async function (challenge) {
   // pipe the zip stream to a zip file
   const output = fs.createWriteStream(zipPath)
   archive.pipe(output)
-
-  return new Promise((resolve, reject) => {
-    output.on('error', reject)
-    output.on('close', resolve)
-  })
+  await streamPromise(output)
 }
 
-Challenge.prototype.submitChallenge = async function (req, res, options = {}, user, challenge) {
-  if (!options.hasOwnProperty('uploadMaxSize')) options.uploadMaxSize = '2M'
-
-  if (typeof options.uploadMaxSize === 'string') {
-    const rx = /^(\d+)([kmg])$/
-    const match = rx.exec(options.uploadMaxSize.toLocaleLowerCase())
-    if (match) {
-      let num = +match[1]
-      switch (match[2]) {
-        case 'k':
-          num = num * 1000
-          break
-        case 'm':
-          num = num * 1000000
-          break
-        case 'g':
-          num = num * 1000000000
-          break
-      }
-      options.uploadMaxSize = num
-    }
-  }
-
-  if (typeof options.uploadMaxSize !== 'number' || isNaN(options.uploadMaxSize) || options.uploadMaxSize <= 0) {
-    throw Error('Option uploadMaxSize must be a positive number or a string indicating size. Ex: 2M')
-  }
-
-  // TODO: throttling
-
+Challenge.prototype.submitChallenge = async function (req, res, user, challenge) {
   const details = await this.getChallengeDetails(challenge)
   const challengeDir = path.resolve(this.config.challengePath, challenge)
   const key = challenge + '_' + user.username + '_' + Date.now()
   const uploadedFilesPath = path.resolve(tempDir, key)
 
-  // attempt to load the hooks file
-  let hooks
+  let meter
+
   try {
+    // TODO: throttling
+
+    // load configuration
+    const options = {
+      maxUploadSize: '2M',
+      maxRunTime: 30000
+    }
+    if (details.hasConfig) {
+      const content = await files.readFile(path.resolve(challengeDir, 'config.json'))
+      const obj = JSON.parse(content)
+      Object.assign(options, obj)
+    }
+    options.maxUploadSize = extractNumber(options.maxUploadSize)
+
+    // attempt to load the hooks file
+    let hooks
     if (details.hasHooks) {
-      const hooksPath = path.resolve(challengeDir, 'test-runner-hooks.js')
+      const hooksPath = path.resolve(challengeDir, 'hooks.js')
       hooks = require(hooksPath)
       delete require.cache[hooksPath]
     }
-  } catch (err) {
-    console.error('Error loading hooks file for challenge: ' + challenge + '\n' + err.stack)
-  }
 
-  let output
-  let error
-  try {
+    let output
+
     // unzip the upload into the temp directory
-    const meter = new Meter(options.uploadMaxSize)
+    meter = new Meter(options.maxUploadSize)
     await unzip(req.pipe(meter), uploadedFilesPath)
 
     // copy overwrite files into temp directory
@@ -286,26 +278,80 @@ Challenge.prototype.submitChallenge = async function (req, res, options = {}, us
       }
     }
 
-    // run test runner and capture the output
-    const runnerScript = path.resolve(challengeDir, 'test-runner.' + (process.platform === 'win32' ? 'bat' : 'sh'))
-    const execOptions = { timeout: 30000 }
-    const execOut = await runExec(runnerScript + ' ' + uploadedFilesPath, execOptions)
+    if (details.hasDockerfile) {
+      const dockerTagName = 'code_challenge__' + challenge
 
-    // parse the output
-    if (hooks && hooks.parseResults) {
-      output = await Promise.resolve(hooks.parseResults(execOut))
+      // build the image
+      const build = await runExec('docker build --tag ' + dockerTagName + ' .', { cwd: challengeDir })
+      debug(build.output)
+
+      // run the container
+      const child = spawn('docker', ['run', '--rm', '-t', '-v', uploadedFilesPath + ':/root/challenge', dockerTagName])
+      const timeoutId = setTimeout(function () { child.kill() }, options.maxRunTime)
+
+      // capture container output
+      output = ''
+      child.stdout.on('data', data => { output += data.toString() })
+      child.stderr.on('data', data => { output += data.toString() })
+
+      // wait for the container to be done
+      await new Promise((resolve) => { child.on('close', resolve) })
+      clearTimeout(timeoutId)
+
+      if (hooks && hooks.parseTestResults) {
+        output = await Promise.resolve(hooks.parseTestResults(stripAnsi(output)))
+        const passed = output.passed
+        const failed = output.failed
+
+        const store = this.config.store
+        await store.save(user.id, challenge, new Date(), passed / (passed + failed))
+      }
+    } else if (details.hasDockerCompose) {
+      // TODO: docker-compose
     }
+
+    res.status(200)
+    res[typeof output === 'object' ? 'json' : 'send'](output)
   } catch (err) {
-    error = err
+    // TODO: meter works, but this message isn't sent back. Need to fix this
+    if (meter && meter.bytes > meter.maxBytes) {
+      res.status(400).send('Upload size too large')
+    } else {
+      console.error(err.stack)
+      res.sendStatus(500)
+    }
   }
 
   // delete temporary directory
-  await files.rmDir(uploadedFilesPath)
-
-  return { error, output }
+  try {
+    await files.rmDir(uploadedFilesPath)
+  } catch (err) {
+    console.error(err.stack)
+  }
 }
 
 Challenge.fileStore = fileStore
+
+function extractNumber (value) {
+  const rx = /^(\d+)([kmg])$/
+  const match = rx.exec(value.toLocaleLowerCase())
+  if (match) {
+    let num = +match[1]
+    switch (match[2]) {
+      case 'k':
+        num = num * 1000
+        break
+      case 'm':
+        num = num * 1000000
+        break
+      case 'g':
+        num = num * 1000000000
+        break
+    }
+    return num
+  }
+  return value
+}
 
 function runExec (command, options = {}) {
   return new Promise((resolve, reject) => {
@@ -314,6 +360,15 @@ function runExec (command, options = {}) {
       if (err) reject(err)
       resolve({ output, stdout, stderr })
     })
+    child.stdout.on('data', d => { output += d.toString() })
+    child.stderr.on('data', d => { output += d.toString() })
+  })
+}
+
+function runSpawn (command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    let output = ''
+    const child = exec(command, args, options)
     child.stdout.on('data', d => { output += d.toString() })
     child.stderr.on('data', d => { output += d.toString() })
   })
