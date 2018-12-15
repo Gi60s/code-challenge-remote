@@ -6,11 +6,10 @@ const unzip = require('unzip')
 
 exports.unzip = function (stream, destination) {
   return new Promise((resolve, reject) => {
-    const result = stream
-      .pipe(unzip.Extract({ path: destination }))
-    result.on('error', reject)
-    result.on('close', resolve)
-    result.on('finish', resolve)
+    const extract = unzip.Extract({ path: destination })
+    extract.on('error', reject)
+    extract.on('close', resolve)
+    stream.pipe(extract)
   })
 }
 
@@ -21,47 +20,18 @@ exports.unzip = function (stream, destination) {
  * @returns {Readable} A readable stream that has promise .then and .catch
  */
 exports.zip = function (dirPath, ignored = []) {
-  const deferred = {}
-  deferred.promise = new Promise((resolve, reject) => {
-    deferred.resolve = resolve
-    deferred.reject = reject
-  })
-
   // create zip from files
   const archive = archiver('zip', {
     zlib: { level: 9 } // Sets the compression level.
   })
 
-  // add promise like then
-  archive.then = function (onSuccess, onReject) {
-    deferred.promise.then(onSuccess, onReject)
-  }
-
-  // add promise like catch
-  archive.catch = function (onReject) {
-    deferred.promise.then(onReject)
-  }
-
   // good practice to catch warnings (ie stat failures and other non-blocking errors)
-  archive.on('warning', function(err) {
+  archive.on('warning', err => {
     if (err.code === 'ENOENT') {
       console.warn(err.message)
     } else {
-      deferred.reject(err)
+      throw err
     }
-  })
-
-  // good practice to catch this error explicitly
-  archive.on('error', function(err) {
-    deferred.reject(err)
-  })
-
-  archive.on('close', () => {
-    deferred.resolve()
-  })
-
-  archive.on('end', () => {
-    deferred.resolve()
   })
 
   // get only file path for files that don't reside within node modules and that are not private
