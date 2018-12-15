@@ -3,6 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const { promisify } = require('util')
 
+exports.chmod = promisify(fs.chmod)
 exports.copyFile = promisify(fs.copyFile)
 exports.mkDir = promisify(fs.mkdir)
 exports.readDir = promisify(fs.readdir)
@@ -61,9 +62,16 @@ exports.rmDir = async function (dirPath) {
     const promises = filePaths.map(async filePath => {
       const fullPath = path.resolve(dirPath, filePath)
       const stats = await exports.stat(fullPath)
-      return stats.isDirectory()
-        ? exports.rmDir(fullPath)
-        : exports.unlink(fullPath)
+      try {
+        await (stats.isDirectory() ? exports.rmDir(fullPath) : exports.unlink(fullPath))
+      } catch (err) {
+        if (err.code === 'EACCES') {
+          await exports.chmod(fullPath, 0o777)
+          await (stats.isDirectory() ? exports.rmDir(fullPath) : exports.unlink(fullPath))
+        } else {
+          throw err
+        }
+      }
     })
     return Promise.all(promises)
       .then(() => {
@@ -105,7 +113,7 @@ exports.overwrite = async function (source, dest) {
     }
 
     const promise = dirPromise
-      .then(() => exports.copy(sourceFilePath, destFilePath))
+      .then(() => exports.copyFile(sourceFilePath, destFilePath))
 
     promises.push(promise)
   }
