@@ -37,6 +37,7 @@
   "dependencies": {
     "archiver": "^3.0.0",
     "debug": "^4.1.0",
+    "strip-ansi": "^5.0.0",
     "unzip": "^0.1.11"
   }
 }
