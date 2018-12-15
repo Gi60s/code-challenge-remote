@@ -12,12 +12,10 @@ const writeFile = util.promisify(fs.writeFile)
 module.exports = function (directory) {
   if (!directory || typeof directory !== 'string') throw Error('Required property "directory" must be a non empty string')
 
-  const directoryExists = ensureDirectoryExists(directory)
-
   async function save (userId, challengeName, date, score) {
-    await directoryExists
+    await ensureDirectoryExists(directory)
 
-    const filePath = getFileName(directory, userId)
+    const filePath = getFileName(directory, userId + '.json')
     const data = await getContent(filePath)
     if (!data[challengeName]) data[challengeName] = []
     data[challengeName].push({
@@ -25,15 +23,16 @@ module.exports = function (directory) {
       score
     })
 
-    writeFile(filePath, JSON.stringify(data))
+    await writeFile(filePath, JSON.stringify(data), 'utf8')
   }
 
   async function load (userId, add) {
-    const filePath = getFileName(directory, userId)
+    const filePath = getFileName(directory, userId + '.json')
     const content = await getContent(filePath)
     Object.keys(content).forEach(challenge => {
-      const { date, score } = content[challenge]
-      add(challenge, date, score)
+      content[challenge].forEach(({ date, score }) => {
+        add(challenge, date, score)
+      })
     })
   }
 
