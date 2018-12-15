@@ -54,16 +54,6 @@ module.exports = function (port) {
     })
   })
 
-  app.get('/status', (req, res) => {
-    const user = req.session.user
-    res.set('content-type', 'text/plain')
-    if (user) {
-      res.send('Logged in as ' + user + '\n\n' + challenge.getLoginCommand(req))
-    } else {
-      res.send('Not logged in')
-    }
-  })
-
   return new Promise((resolve, reject) => {
     const listener = app.listen(port, function (err) {
       if (err) {
