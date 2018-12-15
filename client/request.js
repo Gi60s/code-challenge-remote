@@ -59,7 +59,10 @@ exports.request = function ({ body, headers = {}, method = 'GET', url }) {
 exports.upload = function (client, challenge, readable) {
   return new Promise((resolve, reject) => {
     const options = getUrlParts('POST', client.url + '/upload/' + challenge)
-    options.headers = { cookie: client.cookie }
+    options.headers = {
+      'content-type': 'application/octet',
+      cookie: client.cookie
+    }
     const mode = options.protocol === 'http:' ? http : https
 
     const req = mode.request(options, res => {
@@ -69,7 +72,7 @@ exports.upload = function (client, challenge, readable) {
         data += chunk
       })
       res.on('end', () => {
-        if (res.headers['content-type'].startsWith('application/json')) {
+        if (res.headers && res.headers['content-type'] && res.headers['content-type'].startsWith('application/json')) {
           try {
             data = JSON.parse(data)
           } catch (err) {}
