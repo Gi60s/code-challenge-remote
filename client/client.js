@@ -118,7 +118,12 @@ CodeChallengeClient.prototype.save = function () {
  * @param directory
  */
 CodeChallengeClient.prototype.submit = async function (challenge, directory) {
-  const archive = zip(directory)
+  const ignored = await request({
+    headers: { cookie: this.cookie },
+    url: this.url + '/ignored/' + challenge
+  })
+
+  const archive = zip(directory, ignored)
   const zipFilePath = path.resolve(tempDir, challenge + '_' + Date.now() + '.zip')
 
   // pipe the zip stream to a zip file
