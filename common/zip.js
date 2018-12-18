@@ -7,8 +7,18 @@ const unzip = require('unzip')
 exports.unzip = function (stream, destination) {
   return new Promise((resolve, reject) => {
     const extract = unzip.Extract({ path: destination })
-    extract.on('error', reject)
-    extract.on('close', resolve)
+    extract.on('error', err => {
+      reject(err)
+    })
+    extract.on('close', () => {
+      resolve()
+    })
+    stream.on('error', err => {
+      reject(err)
+    })
+    stream.on('close', () => {
+      resolve()
+    })
     stream.pipe(extract)
   })
 }
