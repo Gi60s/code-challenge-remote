@@ -61,7 +61,9 @@ const args = Array.from(process.argv).slice(2)
           console.log(key)
           if (value.length) {
             value.forEach(v => {
-              console.log('  ' + (new Date(v.date)).toLocaleString() + '    ' + v.score)
+              let score = String(Math.round(100 * v.score))
+              score = ' '.repeat(3 - score.length) + score
+              console.log('  ' + (new Date(v.date)).toLocaleString() + '    ' + score + '%')
             })
           } else {
             console.log('  Not submitted')
@@ -80,6 +82,8 @@ const args = Array.from(process.argv).slice(2)
           .then(res => {
             if (res.body && res.body.body) {
               console.log(res.body.body)
+            } else if (res.body) {
+              console.log(res.body)
             } else {
               console.log(res)
             }
