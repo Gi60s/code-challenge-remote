@@ -6,7 +6,7 @@ const path = require('path')
 const request = require('request-promise-native')
 const server = require('../example/server')
 
-/* globals describe before after beforeEach afterEach it */
+/* globals describe after beforeEach afterEach it */
 describe('code-challenge', () => {
   const port = 3000
   const urlPrefix = 'http://localhost:' + port
@@ -99,13 +99,13 @@ describe('code-challenge', () => {
 
     it('can get status', async () => {
       const { stdout } = await client('status')
-      expect(stdout).to.match(/first-challenge\s+Not submitted/)
+      expect(stdout).to.match(/second-challenge\s+Not submitted/)
     })
 
     describe('init', () => {
       it('can get challenge into current working directory', async () => {
         const client = Client.load()
-        await client.initChallenge('first-challenge', clientChallengeDir)
+        await client.initChallenge('second-challenge', clientChallengeDir)
       })
 
       describe('cli', () => {
@@ -115,42 +115,42 @@ describe('code-challenge', () => {
         })
 
         it('can get challenge into current working directory', async () => {
-          const { stdout } = await client('init first-challenge', { cwd: clientChallengeDir })
+          const { stdout } = await client('init second-challenge', { cwd: clientChallengeDir })
           expect(stdout).to.match(/Downloaded challenge to/)
           const filePaths = await files.readDirFiles(clientChallengeDir)
           expect(filePaths.length).to.be.greaterThan(0)
         })
 
         it('can get challenge into specified directory', async () => {
-          const { stdout } = await client('init first-challenge ' + clientChallengeDir)
+          const { stdout } = await client('init second-challenge ' + clientChallengeDir)
           expect(stdout).to.match(/Downloaded challenge to/)
           const filePaths = await files.readDirFiles(clientChallengeDir)
           expect(filePaths.length).to.be.greaterThan(0)
         })
 
         it('will not overwrite existing challenge directory', async () => {
-          let out = await client('init first-challenge ' + clientChallengeDir)
+          let out = await client('init second-challenge ' + clientChallengeDir)
           expect(out.stdout).to.match(/Downloaded challenge to/)
-          out = await client('init first-challenge ' + clientChallengeDir)
+          out = await client('init second-challenge ' + clientChallengeDir)
           expect(out.stderr).to.match(/Could not download files because a directory already exists at the location/)
         })
       })
     })
 
     describe('submit', () => {
-      const firstChallengeDir = path.resolve(clientChallengeDir, 'first-challenge')
+      const secondChallengeDir = path.resolve(clientChallengeDir, 'second-challenge')
 
       it('can submit challenge', async () => {
         const client = Client.load()
-        await client.initChallenge('first-challenge', clientChallengeDir)
-        const res = await client.submit('first-challenge', firstChallengeDir)
+        await client.initChallenge('second-challenge', clientChallengeDir)
+        const res = await client.submit('second-challenge', secondChallengeDir)
         expect(res.body).to.have.ownProperty('failed')
         expect(res.body).to.have.ownProperty('passed')
       })
 
       describe('cli', () => {
         beforeEach(async () => {
-          await client('init first-challenge ' + clientChallengeDir)
+          await client('init second-challenge ' + clientChallengeDir)
         })
 
         it('requires the challenge name', async () => {
@@ -159,52 +159,61 @@ describe('code-challenge', () => {
         })
 
         it('can upload challenge from current working directory', async () => {
-          let { stdout } = await client('submit first-challenge', { cwd: firstChallengeDir })
+          let { stdout } = await client('submit second-challenge', { cwd: secondChallengeDir })
           expect(stdout).to.match(/test suite/)
           expect(stdout).not.to.match(/passed/)
         })
 
         it('can upload challenge from specified directory', async () => {
-          let { stdout } = await client('submit first-challenge ' + firstChallengeDir)
+          let { stdout } = await client('submit second-challenge ' + secondChallengeDir)
           expect(stdout).to.match(/test suite/)
           expect(stdout).not.to.match(/passed/)
         })
 
         it('cannot upload an overly large directory', async () => {
-          const largeFilePath = path.resolve(firstChallengeDir, 'large.txt')
+          const largeFilePath = path.resolve(secondChallengeDir, 'large.txt')
           let str = ''
-          for (let i = 0; i < 10000000; i++) {
+          for (let i = 0; i < 2000000; i++) {
             const index = Math.floor(Math.random() * 94) + 32
             str += String.fromCharCode(index)
           }
           await files.writeFile(largeFilePath, str)
-          const { stdout } = await client('submit first-challenge ' + firstChallengeDir)
-          expect(stdout).to.match(/ECONNRESET/)
+          const { stdout } = await client('submit second-challenge ' + secondChallengeDir)
+          expect(stdout).to.match(/Upload size too large/)
         })
       })
     })
 
     describe('status', () => {
-      const firstChallengeDir = path.resolve(clientChallengeDir, 'first-challenge')
+      const secondChallengeDir = path.resolve(clientChallengeDir, 'second-challenge')
 
       beforeEach(async () => {
-        await client('init first-challenge ' + clientChallengeDir)
+        await client('init second-challenge ' + clientChallengeDir)
       })
 
       it('can list status of no submits', async () => {
         const output = await client('status')
-        expect(output.stdout).to.match(/first-challenge\s+Not submitted/)
+        expect(output.stdout).to.match(/second-challenge\s+Not submitted/)
       })
 
-      it.only('can list status of one submit', async () => {
-        await client('submit first-challenge ' + firstChallengeDir)
+      it('can list status of one submit', async () => {
+        await client('submit second-challenge ' + secondChallengeDir)
         const output = await client('status')
-        expect(output.stdout).not.to.match(/first-challenge\s+Not submitted/)
-        expect(output.stdout).to.match(/first-challenge\s+[\s\S]+?0\n$/)
+        expect(output.stdout).not.to.match(/second-challenge\s+Not submitted/)
+        expect(output.stdout).to.match(/second-challenge\s+[\s\S]+?0%\n$/)
       })
 
-      it('can list status of multiple submits', () => {
-        throw Error('todo')
+      it('can list status of multiple submits', async function () {
+        this.timeout(15000)
+        await client('submit second-challenge ' + secondChallengeDir)
+
+        const indexFilePath = path.resolve(secondChallengeDir, 'index.js')
+        await files.writeFile(indexFilePath, 'exports.addTwoNumbers = function (a, b) { return a + b }', 'utf8')
+        await client('submit second-challenge ' + secondChallengeDir)
+
+        const output = await client('status')
+        expect(output.stdout).not.to.match(/second-challenge\s+Not submitted/)
+        expect(output.stdout).to.match(/second-challenge\s+\d{1,2}\/\d{1,2}\/\d{4}, \d{1,2}:\d{2}:\d{2} [AP]M\s+0%\s+\d{1,2}\/\d{1,2}\/\d{4}, \d{1,2}:\d{2}:\d{2} [AP]M\s+75%\s+$/)
       })
     })
   })
