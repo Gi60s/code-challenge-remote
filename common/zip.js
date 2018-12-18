@@ -16,9 +16,6 @@ exports.unzip = function (stream, destination) {
     stream.on('error', err => {
       reject(err)
     })
-    stream.on('close', () => {
-      resolve()
-    })
     stream.pipe(extract)
   })
 }
