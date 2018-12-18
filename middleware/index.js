@@ -45,9 +45,10 @@ Challenge.prototype.getChallengeDetails = async function (challenge) {
 
   // get challenge details
   if (isDirectory) {
-    const [ hasConfig, hasHooks, hasOverwrites, hasStarter, hasStarterZip, hasDockerfile, hasDockerCompose ] = await Promise.all([
+    const [ hasConfig, hasHooks, hasIgnore, hasOverwrites, hasStarter, hasStarterZip, hasDockerfile, hasDockerCompose ] = await Promise.all([
       files.isFile(path.resolve(fullPath, 'config.json')),
       files.isFile(path.resolve(fullPath, 'hooks.js')),
+      files.isFile(path.resolve(fullPath, 'ignore.txt')),
       files.isDirectory(path.resolve(fullPath, 'overwrite')),
       files.isDirectory(path.resolve(fullPath, 'starter')),
       files.isFile(path.resolve(fullPath, challenge + '.zip')),
@@ -58,6 +59,7 @@ Challenge.prototype.getChallengeDetails = async function (challenge) {
     return {
       hasConfig,
       hasHooks,
+      hasIgnore,
       hasOverwrites,
       hasStarterZip,
       hasDockerfile,
@@ -66,7 +68,9 @@ Challenge.prototype.getChallengeDetails = async function (challenge) {
     }
   } else {
     return {
+      hasConfig: false,
       hasHooks: false,
+      hasIgnore: false,
       hasOverwrites: false,
       hasStarterZip: false,
       hasDockerfile: false,
@@ -184,6 +188,17 @@ Challenge.prototype.middleware = function () {
         const challenge = req.path.substr(10)
         this.downloadChallenge(req, res, challenge)
 
+      // get the status of all challenges for the user
+      } else if (method === 'GET' && req.path.startsWith('/ignored/')) {
+        const challenge = req.path.substr(9)
+        const challengeDirectory = path.resolve(this.config.challengePath, challenge)
+        getIgnored(challengeDirectory)
+          .then(ignored => res.json(ignored))
+          .catch(err => {
+            console.error(err.stack)
+            res.sendStatus(500)
+          })
+
       // get the login command
       } else if (method === 'GET' && req.path === '/login-command') {
         res.status(200)
@@ -214,14 +229,14 @@ Challenge.prototype.middleware = function () {
 // take a challenge's starter directory and create a zip file
 Challenge.prototype.prepare = async function (challenge) {
   const { isChallenge } = await this.getChallengeDetails(challenge)
-  if (isChallenge) throw Error('Cannot prepare challenge due to missing starter directory or missing Dockerfile / docker-compose.yml')
+  if (!isChallenge) throw Error('Cannot prepare challenge "' + challenge + '" due to missing starter directory or missing Dockerfile / docker-compose.yml')
 
   const challengeDirectory = path.resolve(this.config.challengePath, challenge)
   const starterDirectory = path.resolve(challengeDirectory, 'starter')
   const zipPath = path.resolve(challengeDirectory, challenge + '.zip')
 
   // start zipping the specified path
-  const archive = zip(starterDirectory)
+  const archive = zip(starterDirectory, await getIgnored(challengeDirectory))
 
   // pipe the zip stream to a zip file
   const output = fs.createWriteStream(zipPath)
@@ -262,9 +277,20 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
 
     let output
 
-    // unzip the upload into the temp directory
-    meter = new Meter(options.maxUploadSize)
-    await unzip(req.pipe(meter), uploadedFilesPath)
+    try {
+      // unzip the upload into the temp directory
+      meter = new Meter(options.maxUploadSize)
+      const uploadStream = req.pipe(meter)
+      await unzip(uploadStream, uploadedFilesPath)
+    } catch (err) {
+      if (meter && meter.bytes > meter.maxBytes) {
+        res.status(400).send('Upload size too large')
+      } else {
+        res.status(400).send('Malformed upload')
+        console.error(err.stack)
+      }
+      return
+    }
 
     // copy overwrite files into temp directory
     if (details.hasOverwrites) {
@@ -313,13 +339,8 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
     res.status(200)
     res[typeof output === 'object' ? 'json' : 'send'](output)
   } catch (err) {
-    // TODO: meter works, but this message isn't sent back. Need to fix this
-    if (meter && meter.bytes > meter.maxBytes) {
-      res.status(400).send('Upload size too large')
-    } else {
-      console.error(err.stack)
-      res.sendStatus(500)
-    }
+    console.error(err.stack)
+    res.sendStatus(500)
   }
 
   // delete temporary directory
@@ -353,6 +374,20 @@ function extractNumber (value) {
   return value
 }
 
+async function getIgnored (challengeDirectory) {
+  const ignorePath = path.resolve(challengeDirectory, 'ignore.txt')
+  return files.readFile(ignorePath, 'utf8')
+    .then(content => {
+      return content
+        .split(/\r\n|\r|\n/)
+        .map(v => v.trim())
+    })
+    .catch(err => {
+      if (err.code === 'ENOENT') return []
+      throw err
+    })
+}
+
 function runExec (command, options = {}) {
   return new Promise((resolve, reject) => {
     let output = ''
@@ -360,15 +395,6 @@ function runExec (command, options = {}) {
       if (err) reject(err)
       resolve({ output, stdout, stderr })
     })
-    child.stdout.on('data', d => { output += d.toString() })
-    child.stderr.on('data', d => { output += d.toString() })
-  })
-}
-
-function runSpawn (command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    let output = ''
-    const child = exec(command, args, options)
     child.stdout.on('data', d => { output += d.toString() })
     child.stderr.on('data', d => { output += d.toString() })
   })
