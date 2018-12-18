@@ -1,0 +1,14 @@
+{
+  "name": "second-challenge",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "test": "mocha /root/challenge/test"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "mocha": "^5.2.0"
+  }
+}
