@@ -121,7 +121,8 @@ Challenge.prototype.getStatus = async function (req) {
   })
 
   const add = function (challenge, date, score) {
-    challenges[challenge].push({ date, score })
+    if (!(date instanceof Date)) date = new Date(date)
+    challenges[challenge].push({ date: date.toISOString(), score })
   }
 
   const store = this.config.store
@@ -304,7 +305,46 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
       }
     }
 
-    if (details.hasDockerfile) {
+    if (details.hasDockerCompose) {
+      const dockerProjectName = 'challenge_' + shortUid()
+      const execOptions = {
+        cwd: challengeDir,
+        env: Object.assign({}, process.env, { UPLOADED_CHALLENGE_DIR: uploadedFilesPath })
+      }
+
+      // build the project
+      const build = await runExec('docker-compose -p ' + dockerProjectName + ' build', execOptions)
+      debug(build.output)
+
+      // run the project
+      const child = spawn('docker-compose', ['-p', dockerProjectName, 'up', '--abort-on-container-exit', '--timeout', '5'], execOptions)
+      const timeoutId = setTimeout(function () { child.kill() }, options.maxRunTime)
+
+      // capture container output
+      output = ''
+      child.stdout.on('data', data => { output += data.toString() })
+      child.stderr.on('data', data => { output += data.toString() })
+
+      // wait for the container to be done
+      await new Promise((resolve, reject) => {
+        child.on('close', () => resolve())
+        child.on('exit', () => resolve())
+        child.on('error', err => reject(err))
+      })
+      clearTimeout(timeoutId)
+
+      // take down the project
+      await runExec('docker-compose -p ' + dockerProjectName + ' down --rmi all', execOptions)
+
+      if (hooks && hooks.parseTestResults) {
+        output = await Promise.resolve(hooks.parseTestResults(stripAnsi(output)))
+        const passed = output.passed
+        const failed = output.failed
+
+        const store = this.config.store
+        await store.save(user.id, challenge, new Date(), passed / (passed + failed))
+      }
+    } else if (details.hasDockerfile) {
       const dockerTagName = 'code_challenge__' + challenge
 
       // build the image
@@ -321,7 +361,11 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
       child.stderr.on('data', data => { output += data.toString() })
 
       // wait for the container to be done
-      await new Promise((resolve) => { child.on('close', resolve) })
+      await new Promise((resolve, reject) => {
+        child.on('close', () => resolve())
+        child.on('exit', () => resolve())
+        child.on('error', err => reject(err))
+      })
       clearTimeout(timeoutId)
 
       if (hooks && hooks.parseTestResults) {
@@ -332,8 +376,6 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
         const store = this.config.store
         await store.save(user.id, challenge, new Date(), passed / (passed + failed))
       }
-    } else if (details.hasDockerCompose) {
-      // TODO: docker-compose
     }
 
     res.status(200)
@@ -374,6 +416,27 @@ function extractNumber (value) {
   return value
 }
 
+async function getDockerImages () {
+  const { stdout } = await runExec('docker images')
+  const lines = stdout.split(/\r\n|\r|\n/)
+    .map(v => v.split(/\s{2,}/))
+  const keys = lines
+    .shift()
+    .map(v => v.toLocaleLowerCase().replace(/ /g, '_'))
+  const results = []
+  while (lines.length) {
+    const line = lines.shift()
+    if (line[0]) {
+      const obj = {}
+      keys.forEach((key, index) => {
+        obj[key] = line[index]
+      })
+      results.push(obj)
+    }
+  }
+  return results
+}
+
 async function getIgnored (challengeDirectory) {
   const ignorePath = path.resolve(challengeDirectory, 'ignore.txt')
   return files.readFile(ignorePath, 'utf8')
@@ -398,4 +461,11 @@ function runExec (command, options = {}) {
     child.stdout.on('data', d => { output += d.toString() })
     child.stderr.on('data', d => { output += d.toString() })
   })
+}
+
+/* global BigInt */
+function shortUid () {
+  const rand = String(Math.floor(Math.random() * 1000000000))
+  const num = BigInt(Date.now() + '0'.repeat(9 - rand.length) + rand)
+  return num.toString(36)
 }
