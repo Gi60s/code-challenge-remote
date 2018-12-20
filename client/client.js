@@ -123,7 +123,7 @@ CodeChallengeClient.prototype.submit = async function (challenge, directory) {
     url: this.url + '/ignored/' + challenge
   })
 
-  const archive = zip(directory, ignored)
+  const archive = zip(directory, ignored.body)
   const zipFilePath = path.resolve(tempDir, challenge + '_' + Date.now() + '.zip')
 
   // pipe the zip stream to a zip file
