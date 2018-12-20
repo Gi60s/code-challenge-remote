@@ -2,19 +2,21 @@
   "name": "code-challenge-remote",
   "version": "0.0.1",
   "description": "Code challenges with a server component for running tests in the cloud",
-  "main": "index.js",
+  "main": "middleware/index.js",
   "bin": {
-    "challenge": "./client"
+    "challenge": "client/index.js"
   },
   "scripts": {
-    "test": "jest"
+    "test": "mocha test"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Gi60s/code-challenge-remote.git"
   },
   "keywords": [
-    "code-challenge",
+    "challenge",
+    "code challenge",
+    "middleware",
     "grading",
     "testing"
   ],
