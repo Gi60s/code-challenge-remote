@@ -7,10 +7,11 @@ const request = require('request-promise-native')
 const server = require('../example/server')
 
 /* globals describe after beforeEach afterEach it */
-describe('code-challenge', () => {
+describe('code-challenge', function () {
   const port = 3000
   const urlPrefix = 'http://localhost:' + port
   let listener
+  this.timeout(15000)
 
   beforeEach(async () => {
     listener = await server(port)
@@ -140,10 +141,19 @@ describe('code-challenge', () => {
     describe('submit', () => {
       const secondChallengeDir = path.resolve(clientChallengeDir, 'second-challenge')
 
-      it('can submit challenge', async () => {
+      it('can submit challenge to run Dockerfile', async () => {
         const client = Client.load()
         await client.initChallenge('second-challenge', clientChallengeDir)
         const res = await client.submit('second-challenge', secondChallengeDir)
+        expect(res.body).to.have.ownProperty('failed')
+        expect(res.body).to.have.ownProperty('passed')
+      })
+
+      it('can submit challenge to run docker-compose', async () => {
+        const firstChallengeDir = path.resolve(clientChallengeDir, 'first-challenge')
+        const client = Client.load()
+        await client.initChallenge('first-challenge', clientChallengeDir)
+        const res = await client.submit('first-challenge', firstChallengeDir)
         expect(res.body).to.have.ownProperty('failed')
         expect(res.body).to.have.ownProperty('passed')
       })
@@ -204,7 +214,6 @@ describe('code-challenge', () => {
       })
 
       it('can list status of multiple submits', async function () {
-        this.timeout(15000)
         await client('submit second-challenge ' + secondChallengeDir)
 
         const indexFilePath = path.resolve(secondChallengeDir, 'index.js')
@@ -246,5 +255,4 @@ describe('code-challenge', () => {
       })
     })
   }
-
 })
