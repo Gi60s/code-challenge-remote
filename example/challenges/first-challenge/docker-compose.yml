@@ -1,0 +1,6 @@
+version: '3'
+services:
+  app:
+    build: ./
+    volumes:
+      - ${UPLOADED_CHALLENGE_DIR}:/root/challenge
