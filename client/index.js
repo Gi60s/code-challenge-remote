@@ -37,7 +37,7 @@ const args = Array.from(process.argv).slice(2)
       const outputDir = args[2] ? path.resolve(process.cwd(), args[2]) : process.cwd()
       if (challenge) {
         client.initChallenge(challenge, outputDir)
-          .then(() => console.log('Downloaded challenge to ' + outputDir))
+          .then(() => console.log('Downloaded challenge to ' + path.resolve(outputDir, challenge)))
           .catch(err => { console.error(err.message) })
       } else {
         console.log('Missing required <challenge> input\n')
