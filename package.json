@@ -1,6 +1,6 @@
 {
   "name": "code-challenge-remote",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Code challenges with a server component for running tests in the cloud",
   "main": "middleware/index.js",
   "bin": {
