@@ -1,16 +1,21 @@
 'use strict'
+const debug = require('debug')('code-challenge:request')
 const http = require('http')
 const https = require('https')
 
 const rxUrl = /^(https?:)\/\/([^:/]+)(?::(\d+))?(\/.*)?$/
+let index = 0
 
 exports.download = function (client, challenge) {
   return new Promise((resolve, reject) => {
     const options = getUrlParts('GET', client.url + '/download/' + challenge)
     options.headers = { cookie: client.cookie }
     const mode = options.protocol === 'http:' ? http : https
+    let i = index++;
+    debug('making download request [' + i + '] ' + JSON.stringify(options, null, 2))
 
     const req = mode.request(options, res => {
+      debug('request [' + i + '] complete with status code ' + res.statusCode)
       resolve(res)
     })
 
@@ -32,6 +37,8 @@ exports.request = function ({ body, headers = {}, method = 'GET', url }) {
       headers['content-type'] = 'application/json'
     }
 
+    let i = index++;
+    debug('making request [' + i + '] ' + JSON.stringify(options, null, 2))
     const req = mode.request(options, res => {
       let data = ''
       res.setEncoding('utf8')
@@ -45,6 +52,7 @@ exports.request = function ({ body, headers = {}, method = 'GET', url }) {
           } catch (err) {}
         }
         res.body = data
+        debug('request [' + i + '] complete with status code ' + res.statusCode)
         resolve(res)
       })
     })
@@ -65,6 +73,8 @@ exports.upload = function (client, challenge, readable) {
     }
     const mode = options.protocol === 'http:' ? http : https
 
+    let i = index++;
+    debug('making upload request [' + i + '] ' + JSON.stringify(options, null, 2))
     const req = mode.request(options, res => {
       let data = ''
       res.setEncoding('utf8')
@@ -78,6 +88,7 @@ exports.upload = function (client, challenge, readable) {
           } catch (err) {}
         }
         res.body = data
+        debug('request [' + i + '] complete with status code ' + res.statusCode)
         resolve(res)
       })
     })

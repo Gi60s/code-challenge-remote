@@ -1,4 +1,5 @@
 'use strict'
+const debug = require('debug')('code-challenge:client')
 const fs = require('fs')
 const files = require('../common/files')
 const path = require('path')
