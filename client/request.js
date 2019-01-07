@@ -104,7 +104,7 @@ function getUrlParts (method, url) {
   if (!match) throw Error('Invalid URL')
   const protocol = match[1]
   const hostname = match[2]
-  const port = +(match[3] || (protocol === 'http' ? 80 : 443))
+  const port = +(match[3] || (/https/i.test(protocol) ? 443 : 80))
   const path = match[4]
 
   return {
