@@ -2,16 +2,16 @@
 
 module.exports = function (stream) {
   return new Promise((resolve, reject) => {
-    stream.on('error', err => {
-      reject(err)
-    })
+    let remaining = 2
 
-    stream.on('close', () => {
-      resolve()
-    })
+    function end () {
+      remaining--
+      if (remaining === 1) setTimeout(resolve, 500)
+      if (remaining <= 0) resolve()
+    }
 
-    stream.on('end', () => {
-      resolve()
-    })
+    stream.on('error', reject)
+    stream.on('close', end)
+    stream.on('end', end)
   })
 }
