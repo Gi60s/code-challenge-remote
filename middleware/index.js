@@ -184,13 +184,23 @@ Challenge.prototype.middleware = function () {
     if (!user) return res.sendStatus(401)
 
     try {
+      if (method === 'GET' && req.path.startsWith('/config/') && req.path.length > 8) {
+        const challenge = req.path.substr(8)
+        const challengeDirectory = path.resolve(this.config.challengePath, challenge)
+        const ignored = await getIgnored(challengeDirectory)
+        const config = await getConfig(challengeDirectory)
+        res.json({
+          maxUploadSize: extractNumber((config && config.maxUploadSize) || '2M'),
+          ignored
+        })
+
       // download a challenge
-      if (method === 'GET' && req.path.startsWith('/download/')) {
+      } else if (method === 'GET' && req.path.startsWith('/download/') && req.path.length > 10) {
         const challenge = req.path.substr(10)
         this.downloadChallenge(req, res, challenge)
 
-      // get the status of all challenges for the user
-      } else if (method === 'GET' && req.path.startsWith('/ignored/')) {
+      // DEPRECATED IN FAVOR OF /config/:challenge - get the ignored files list
+      } else if (method === 'GET' && req.path.startsWith('/ignored/') && req.path.length > 9) {
         const challenge = req.path.substr(9)
         const challengeDirectory = path.resolve(this.config.challengePath, challenge)
         getIgnored(challengeDirectory)
@@ -250,8 +260,7 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
   const challengeDir = path.resolve(this.config.challengePath, challenge)
   const key = challenge + '_' + user.username + '_' + Date.now()
   const uploadedFilesPath = path.resolve(tempDir, key)
-
-  let meter
+  const zipFilePath = path.resolve(tempDir, key + '.zip')
 
   try {
     // TODO: throttling
@@ -278,20 +287,29 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
 
     let output
 
-    try {
-      // unzip the upload into the temp directory
-      meter = new Meter(options.maxUploadSize)
-      const uploadStream = req.pipe(meter)
-      await unzip(uploadStream, uploadedFilesPath)
-    } catch (err) {
-      if (meter && meter.bytes > meter.maxBytes) {
-        res.status(400).send('Upload size too large')
-      } else {
-        res.status(400).send('Malformed upload')
-        console.error(err.stack)
-      }
-      return
-    }
+    await new Promise((resolve, reject) => {
+      const maxBytes = options.maxUploadSize
+      const zipFileWriteStream = fs.createWriteStream(zipFilePath)
+      let bytes = 0
+      req.on('error', reject)
+      req.on('data', chunk => {
+        bytes += chunk.length
+        if (bytes > maxBytes) {
+          const err = Error('Upload size too large')
+          err.statusCode = 400
+          req.destroy(err)
+          zipFileWriteStream.destroy(err)
+          reject(err)
+        } else {
+          zipFileWriteStream.write(chunk)
+        }
+      })
+      req.on('end', () => {
+        zipFileWriteStream.end(resolve)
+      })
+    })
+
+    await unzip(fs.createReadStream(zipFilePath), uploadedFilesPath)
 
     // copy overwrite files into temp directory
     if (details.hasOverwrites) {
@@ -382,12 +400,17 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
     res[typeof output === 'object' ? 'json' : 'send'](output)
   } catch (err) {
     console.error(err.stack)
-    res.sendStatus(500)
+    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      res.status(err.statusCode)
+      res.send(err.message)
+    } else {
+      res.sendStatus(500)
+    }
   }
 
   // delete temporary directory
   try {
-    await files.rmDir(uploadedFilesPath)
+    // await files.rmDir(uploadedFilesPath)
   } catch (err) {
     console.error(err.stack)
   }
@@ -435,6 +458,16 @@ async function getDockerImages () {
     }
   }
   return results
+}
+
+async function getConfig (challengeDirectory) {
+  const configPath = path.resolve(challengeDirectory, 'config.json')
+  return files.readFile(configPath, 'utf8')
+    .catch(err => {
+      if (err.code === 'ENOENT') return '{}'
+      throw err
+    })
+    .then(content => JSON.parse(content))
 }
 
 async function getIgnored (challengeDirectory) {
