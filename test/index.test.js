@@ -188,6 +188,21 @@ describe('code-challenge', function () {
             str += String.fromCharCode(index)
           }
           await files.writeFile(largeFilePath, str)
+
+          const client = Client.load()
+          const res = await client.submit('second-challenge', secondChallengeDir)
+          expect(res.statusCode).to.equal(400)
+          expect(res.body).to.equal('Upload size too large')
+        })
+
+        it('cannot upload an overly large directory (cli)', async () => {
+          const largeFilePath = path.resolve(secondChallengeDir, 'large.txt')
+          let str = ''
+          for (let i = 0; i < 2000000; i++) {
+            const index = Math.floor(Math.random() * 94) + 32
+            str += String.fromCharCode(index)
+          }
+          await files.writeFile(largeFilePath, str)
           const { stdout } = await client('submit second-challenge ' + secondChallengeDir)
           expect(stdout).to.match(/Upload size too large/)
         })
