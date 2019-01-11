@@ -119,18 +119,42 @@ CodeChallengeClient.prototype.save = function () {
  * @param directory
  */
 CodeChallengeClient.prototype.submit = async function (challenge, directory) {
-  const ignored = await request({
+  const config = await request({
     headers: { cookie: this.cookie },
-    url: this.url + '/ignored/' + challenge
+    url: this.url + '/config/' + challenge
   })
 
-  const archive = zip(directory, ignored.body)
+  if (config.statusCode !== 200) {
+    return {
+      body: config.body,
+      statusCode: config.statusCode
+    }
+  }
+  const { ignored, maxUploadSize } = config.body
+
+  // create zip file
+  const archive = zip(directory, ignored)
   const zipFilePath = path.resolve(tempDir, challenge + '_' + Date.now() + '.zip')
 
   // pipe the zip stream to a zip file
   const output = fs.createWriteStream(zipFilePath)
   archive.pipe(output)
-  await streamPromise(output)
+  await new Promise((resolve, reject) => {
+    output
+      .on('error', reject)
+      .on('close', resolve)
+      .on('end', resolve)
+  })
+
+  // client side check on file upload size
+  const stats = await files.stat(zipFilePath)
+  console.log(stats.size)
+  if (stats.size > maxUploadSize) {
+    return {
+      body: 'Upload size too large',
+      statusCode: 400
+    }
+  }
 
   const readable = fs.createReadStream(zipFilePath)
   const res = await upload(this, challenge, readable)
