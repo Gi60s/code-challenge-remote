@@ -39,7 +39,8 @@
   "dependencies": {
     "archiver": "^3.0.0",
     "debug": "^4.1.1",
+    "stream-to-promise": "^2.2.0",
     "strip-ansi": "^5.0.0",
-    "unzip": "^0.1.11"
+    "unzipper": "^0.9.7"
   }
 }

@@ -2,22 +2,12 @@
 const archiver = require('archiver')
 const files = require('./files')
 const path = require('path')
-const unzip = require('unzip')
+const streamPromise = require('../common/stream-promise')
+const unzip = require('unzipper')
 
 exports.unzip = function (stream, destination) {
-  return new Promise((resolve, reject) => {
-    const extract = unzip.Extract({ path: destination })
-    extract.on('error', err => {
-      reject(err)
-    })
-    extract.on('close', () => {
-      resolve()
-    })
-    stream.on('error', err => {
-      reject(err)
-    })
-    stream.pipe(extract)
-  })
+  const extract = unzip.Extract({ path: destination })
+  return streamPromise(stream.pipe(extract))
 }
 
 /**
