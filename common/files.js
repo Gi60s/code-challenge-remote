@@ -103,12 +103,12 @@ exports.overwrite = async function (source, dest) {
     // make sure that the copy destination directory exists
     let dirPromise
     if (dirMap[destPathDir]) {
-      dirPromise = Promise.resolve()
+      dirPromise = dirMap[destPathDir]
     } else {
       dirPromise = exports.isDirectory(destPathDir)
         .then(isDir => !isDir ? exports.mkDir(destPathDir, { recursive: true }) : null)
         .then(() => {
-          dirMap[destPathDir] = true
+          dirMap[destPathDir] = dirPromise
         })
     }
 
