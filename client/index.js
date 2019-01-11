@@ -2,6 +2,7 @@
 'use strict'
 const Client = require('./client')
 const path = require('path')
+const { request } = require('./request')
 
 const args = Array.from(process.argv).slice(2)
 
@@ -105,7 +106,7 @@ const args = Array.from(process.argv).slice(2)
     }
   }
 
-  function help (client, command) {
+  async function help (client, command) {
     const message = []
     if (!command || command === 'help') {
       message.push('Usage:', '', '  challenge <command>', '', 'Status:', '')
@@ -126,6 +127,19 @@ const args = Array.from(process.argv).slice(2)
         message.push('  help [command]                 Output help')
         message.push('  login <remote_url> <sid>   Log in to the challenge server')
       }
+
+      try {
+        const { body: json } = await request({ url: 'https://api.npms.io/v2/package/code-challenge-remote' })
+        const rx = /^(\d+)\.(\d+)\.(\d+)$/
+        const latest = rx.exec(json.collected.metadata.version)
+        const current = rx.exec(require(path.resolve(__dirname, '../package.json')).version)
+        if ((+latest[1] > +current[1]) || (+latest[1] === +current[1] && +latest[2] > +current[2]) || (+latest[1] === +current[1] && +latest[2] === +current[2] && +latest[3] > +current[3])) {
+          message.push('', 'Update available for code-challenge-remote', '')
+          message.push('  Your version: ' + current[0])
+          message.push('  Latest version: ' + latest[0])
+          message.push('  Update command: npm install -g code-challenge-remote')
+        }
+      } catch (err) { }
     } else if (client) {
       switch (command) {
         case 'init':
