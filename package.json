@@ -39,8 +39,8 @@
   "dependencies": {
     "archiver": "^3.0.0",
     "debug": "^4.1.1",
+    "extract-zip": "^1.6.7",
     "stream-to-promise": "^2.2.0",
-    "strip-ansi": "^5.0.0",
-    "unzipper": "^0.9.7"
+    "strip-ansi": "^5.0.0"
   }
 }

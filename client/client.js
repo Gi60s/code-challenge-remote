@@ -1,5 +1,4 @@
 'use strict'
-const debug = require('debug')('code-challenge:client')
 const fs = require('fs')
 const files = require('../common/files')
 const path = require('path')
@@ -91,7 +90,13 @@ CodeChallengeClient.prototype.initChallenge = async function (challenge, outputD
   const res = await download(this, challenge)
   if (res.statusCode !== 200) throw Error(res.body)
 
-  await unzip(res, outputDir)
+  const zipPath = path.resolve(tempDir, challenge + '.zip')
+  const write = fs.createWriteStream(zipPath)
+  await streamPromise(res.pipe(write))
+
+  await unzip(zipPath, outputDir)
+
+  await files.unlink(zipPath)
 }
 
 /**
@@ -148,7 +153,6 @@ CodeChallengeClient.prototype.submit = async function (challenge, directory) {
 
   // client side check on file upload size
   const stats = await files.stat(zipFilePath)
-  console.log(stats.size)
   if (stats.size > maxUploadSize) {
     return {
       body: 'Upload size too large',

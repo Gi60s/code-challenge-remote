@@ -5,7 +5,6 @@ const files = require('../common/files')
 const fileStore = require('./file-store')
 const fs = require('fs')
 const path = require('path')
-const Meter = require('./stream-meter')
 const streamPromise = require('../common/stream-promise')
 const stripAnsi = require('strip-ansi')
 const tempDir = require('os').tmpdir()
@@ -309,7 +308,7 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
       })
     })
 
-    await unzip(fs.createReadStream(zipFilePath), uploadedFilesPath)
+    await unzip(zipFilePath, uploadedFilesPath)
 
     // copy overwrite files into temp directory
     if (details.hasOverwrites) {
@@ -360,7 +359,9 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
         const failed = output.failed
 
         const store = this.config.store
-        await store.save(user.id, challenge, new Date(), passed / (passed + failed))
+        const score = passed / (passed + failed)
+        if (isNaN(score)) throw Error('Unable to parse challenge results')
+        await store.save(user.id, challenge, new Date(), score)
       }
     } else if (details.hasDockerfile) {
       const dockerTagName = 'code_challenge__' + challenge
@@ -392,6 +393,8 @@ Challenge.prototype.submitChallenge = async function (req, res, user, challenge)
         const failed = output.failed
 
         const store = this.config.store
+        const score = passed / (passed + failed)
+        if (isNaN(score)) throw Error('Unable to parse challenge results')
         await store.save(user.id, challenge, new Date(), passed / (passed + failed))
       }
     }
@@ -437,27 +440,6 @@ function extractNumber (value) {
     return num
   }
   return value
-}
-
-async function getDockerImages () {
-  const { stdout } = await runExec('docker images')
-  const lines = stdout.split(/\r\n|\r|\n/)
-    .map(v => v.split(/\s{2,}/))
-  const keys = lines
-    .shift()
-    .map(v => v.toLocaleLowerCase().replace(/ /g, '_'))
-  const results = []
-  while (lines.length) {
-    const line = lines.shift()
-    if (line[0]) {
-      const obj = {}
-      keys.forEach((key, index) => {
-        obj[key] = line[index]
-      })
-      results.push(obj)
-    }
-  }
-  return results
 }
 
 async function getConfig (challengeDirectory) {
